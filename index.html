@@ -180,4 +180,51 @@ function admin(){
   return `<div class="grid"><div class="card"><div class="mu">Toko aktif</div><div class="big">${db.stores.length}</div></div><div class="card"><div class="mu">Botol terjual</div><div class="big">${sold}</div></div>
   <div class="card"><div class="mu">Laba bersih (setelah komisi)</div><div class="big">${rp(profit)}</div></div><div class="card"><div class="mu">Komisi dibayar</div><div class="big">${rp(comm)}</div></div>
   <div class="card"><div class="mu">Piutang di toko</div><div class="big">${rp(owed)}</div></div><div class="card"><div class="mu">Stok di toko (modal ${rp(stk*COST)})</div><div class="big">${stk} btl</div></div></div>
-  <h2>Perlu perhatian</h2>`+[...
+  <h2>Perlu perhatian</h2>`+[...late.map(s=>[s,'Terlambat '+(-diff(s.next))+' hari','r']),...wk.map(s=>[s,'Terjual &lt;2 btl dua siklus','r'])].map(x=>`<div class="card"><div class="row"><b>${x[0].name}</b><span class="badge r">${x[1]}</span></div><div class="mu">Sales ${x[0].sales} · stok ${x[0].stock} · ${mapA(x[0].lat,x[0].lng)}</div></div>`).join('')||'<div class="card ok">Semua aman.</div>'}
+function rank(){
+  const names=[...new Set(db.stores.map(s=>s.sales))];
+  const R=names.map(n=>{const st=db.stores.filter(s=>s.sales===n),V=db.visits.filter(v=>v.sales===n);return{n,t:st.length,sold:V.reduce((a,v)=>a+v.sold,0),comm:V.reduce((a,v)=>a+v.comm,0),late:st.filter(s=>diff(s.next)<0).length,owed:st.reduce((a,s)=>a+s.owed,0)}}).sort((a,b)=>b.sold-a.sold);
+  return `<h2>Ranking sales</h2>`+R.map((r,i)=>`<div class="card"><div class="row"><b>${i+1}. ${r.n}</b><span class="badge ${r.late?'r':'g'}">${r.late?r.late+' terlambat':'Tepat jadwal'}</span></div>
+  <div class="mu">Toko ${r.t}/${TARGET}</div><div class="bar"><i style="width:${Math.min(100,r.t*10)}%"></i></div>
+  <div class="mu">Terjual ${r.sold} btl · komisi ${rp(r.comm)} · piutang ${rp(r.owed)}</div><button class="sec sm" style="margin-top:8px" onclick="sel='${r.n}';tab='sal';render()">Lihat detail kinerja</button></div>`).join('')}
+function log(){
+  const V=[...db.visits].sort((a,b)=>a.date<b.date?1:-1).slice(0,30);
+  return `<h2>Riwayat kunjungan</h2><div class="card scroll"><table><tr><th>Tgl</th><th>Sales</th><th>Toko</th><th>Jual</th><th>Tagih</th><th>Komisi</th><th>Foto</th><th>Jarak</th><th>Lokasi</th></tr>`+V.map(v=>{const s=db.stores.find(x=>x.id==v.store);return `<tr><td>${v.date}</td><td>${v.sales}</td><td>${s?s.name:v.store}</td><td>${v.sold}</td><td>${rp(v.cash)}</td><td>${rp(v.comm)}</td><td>${v.selfie?`<img class="ph" style="width:34px;height:34px" src="${v.selfie}" onclick="zoom(this.src)">`:'-'}</td><td>${v.dist===undefined?'-':v.dist+' m'}${v.live===false?' ⚠':''}</td><td>${mapA(v.lat,v.lng)}</td></tr>`}).join('')+`</table></div>`}
+function box(ph){return `<input id="q" type="search" placeholder="${ph}" value="${q.replace(/"/g,'&quot;')}" oninput="q=this.value;upd()">`}
+function mq(s){const k=q.trim().toLowerCase();return !k||[s.name,s.owner,s.phone,s.id,s.sales].join(' ').toLowerCase().includes(k)}
+function upd(){const f={jadwal:jl,toko:tl,cust:cl}[tab],e=$('#lst');if(f&&e)e.innerHTML=f()}
+function cust(){
+  const names=[...new Set(db.stores.map(s=>s.sales))];
+  return `<h2>Semua pelanggan</h2>`+box('Cari toko, pemilik, HP, kode, sales...')+`<select onchange="flt=this.value;upd()"><option value="">Semua sales</option>${names.map(n=>`<option ${flt===n?'selected':''}>${n}</option>`).join('')}</select><div id="lst">${cl()}</div>`}
+function cl(){
+  const L=db.stores.filter(s=>mq(s)&&(!flt||s.sales===flt)).sort((a,b)=>a.next<b.next?-1:1);
+  return `<p class="mu">${L.length} toko ditemukan</p>`+(L.map(s=>{const[t,c]=status(s),lv=lastTwo(s.id)[0];return `<div class="card"><div class="row"><b>${s.name}</b><span class="badge ${c}">${t}</span></div><div class="mu">${s.owner} · ${s.phone} · ${s.id}</div><div class="mu">Sales ${s.sales} · stok ${s.stock} btl · piutang ${rp(s.owed)}</div><div class="mu">Kunjungan terakhir: ${lv?lv.date+' (terjual '+lv.sold+')':'-'} · ${mapA(s.lat,s.lng)}</div>${weak(s.id)?'<span class="badge r">Penjualan lemah</span>':''}</div>`}).join('')||'<div class="card">Tidak ditemukan.</div>')}
+function salDetail(){
+  const n=sel,st=db.stores.filter(s=>s.sales===n),V=db.visits.filter(v=>v.sales===n).sort((a,b)=>a.date<b.date?1:-1),m=TODAY.slice(0,7);
+  const sold=V.reduce((a,v)=>a+v.sold,0),comm=V.reduce((a,v)=>a+v.comm,0),cm=V.filter(v=>v.date.startsWith(m)).reduce((a,v)=>a+v.comm,0),owed=st.reduce((a,s)=>a+s.owed,0),late=st.filter(s=>diff(s.next)<0).length,off=V.filter(v=>!v.comm).length;
+  return `<button class="sec sm" onclick="tab='rank';render()">← Kembali</button><h2>Kinerja ${n}</h2>
+  <div class="grid"><div class="card"><div class="mu">Toko</div><div class="big">${st.length}/${TARGET}</div></div><div class="card"><div class="mu">Botol terjual</div><div class="big">${sold}</div></div>
+  <div class="card"><div class="mu">Komisi bulan ini</div><div class="big">${rp(cm)}</div></div><div class="card"><div class="mu">Komisi total</div><div class="big">${rp(comm)}</div></div>
+  <div class="card"><div class="mu">Piutang</div><div class="big">${rp(owed)}</div></div><div class="card"><div class="mu">Laba untuk Anda</div><div class="big">${rp(sold*(PRICE-COST)-comm)}</div></div></div>
+  <div class="card" style="margin-top:10px"><div class="mu">${late} toko terlambat · ${off} kunjungan di luar jadwal/tanpa komisi · ${V.length} kunjungan tercatat</div></div>
+  <h2>Toko ${n}</h2>`+(st.map(s=>{const[t,c]=status(s),lv=lastTwo(s.id)[0];return `<div class="card"><div class="row"><b>${s.name}</b><span class="badge ${c}">${t}</span></div><div class="mu">Stok ${s.stock} · piutang ${rp(s.owed)} · terakhir ${lv?lv.date+' jual '+lv.sold:'-'} · ${mapA(s.lat,s.lng)}</div>${weak(s.id)?'<span class="badge r">Penjualan lemah</span>':''}</div>`}).join('')||'<div class="card">Belum ada toko.</div>')+`<h2>Kunjungan terbaru</h2><div class="card scroll"><table><tr><th>Tgl</th><th>Toko</th><th>Jual</th><th>Tagih</th><th>Komisi</th><th>Foto</th></tr>${V.slice(0,10).map(v=>{const s=db.stores.find(x=>x.id==v.store);return `<tr><td>${v.date}</td><td>${s?s.name:v.store}</td><td>${v.sold}</td><td>${rp(v.cash)}</td><td>${rp(v.comm)}</td><td>${v.selfie?`<img class="ph" style="width:34px;height:34px" src="${v.selfie}">`:'-'}</td></tr>`}).join('')}</table></div>`}
+function stamp(c){const x=c.getContext('2d'),h=44;x.fillStyle='rgba(0,0,0,.6)';x.fillRect(0,c.height-h,c.width,h);x.fillStyle='#fff';x.font='13px sans-serif';x.fillText(new Date().toLocaleString('id-ID')+' · '+me,8,c.height-26);x.fillText(mem.lat?'GPS '+mem.lat.toFixed(5)+', '+mem.lng.toFixed(5)+' ±'+Math.round(mem.acc)+' m':'GPS -',8,c.height-9)}
+function camShot(face){return new Promise(res=>{
+  const o=document.createElement('div');o.className='ov';
+  o.innerHTML='<div class="card"><video autoplay playsinline muted></video><div class="mu" id="cm">Membuka kamera...</div><div class="row" style="margin-top:8px"><button class="sec" id="cx">Batal</button><button id="cs" disabled>Ambil foto</button></div></div>';
+  document.body.appendChild(o);const v=o.querySelector('video');let st=null;
+  const close=()=>{st&&st.getTracks().forEach(t=>t.stop());o.remove()};
+  const done=(src,live)=>{const i=new Image();i.onload=()=>{const c=document.createElement('canvas');c.width=480;c.height=Math.round(480*i.height/i.width);c.getContext('2d').drawImage(i,0,0,c.width,c.height);stamp(c);close();res({data:c.toDataURL('image/jpeg',.7),live})};i.src=src};
+  o.querySelector('#cx').onclick=()=>{close();res(null)};
+  o.querySelector('#cs').onclick=()=>{const c=document.createElement('canvas');c.width=480;c.height=Math.round(480*v.videoHeight/v.videoWidth)||360;c.getContext('2d').drawImage(v,0,0,c.width,c.height);stamp(c);close();res({data:c.toDataURL('image/jpeg',.7),live:true})};
+  const fb=()=>{st&&st.getTracks().forEach(t=>t.stop());v.remove();o.querySelector('#cm').innerHTML='Kamera langsung tidak diizinkan. Pakai kamera sistem (akan ditandai di laporan admin):<input type="file" accept="image/*" capture="'+(face==='user'?'user':'environment')+'" id="ff">';o.querySelector('#ff').onchange=e=>{const f=e.target.files[0];if(!f)return;const fr=new FileReader();fr.onload=()=>done(fr.result,false);fr.readAsDataURL(f)}};
+  if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia))return fb();
+  navigator.mediaDevices.getUserMedia({video:{facingMode:face},audio:false}).then(s=>{st=s;v.srcObject=s;o.querySelector('#cs').disabled=false;o.querySelector('#cm').textContent='Kamera aktif. Arahkan lalu ambil foto.'}).catch(fb)})}
+async function shoot(k,face){
+  if(!gok())return toast('Ambil lokasi GPS dulu (akurasi harus baik) sebelum foto, agar foto bercap lokasi.');
+  const r=await camShot(face);if(r){mem[k]=r.data;mem[k+'Live']=r.live}render2()}
+function zoom(src){const o=document.createElement('div');o.className='ov';o.onclick=()=>o.remove();o.innerHTML='<img src="'+src+'" style="max-width:100%;border-radius:10px">';document.body.appendChild(o)}
+db=load();render();
+</script>
+</body>
+</html>
